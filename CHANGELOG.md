@@ -2,6 +2,10 @@
 
 All notable changes to `@setell/mcp`. Versions before 0.7.0 were internal milestones in the Setell monorepo — **0.7.0 is the first version published to npm.** PR numbers reference the (private) monorepo.
 
+## 0.7.4 — 2026-07-07
+
+- **Never exit at boot** — the definitive robustness fix. The server now ALWAYS registers its tools/resources/prompts and connects the transport, regardless of the key (present, absent, or malformed) or any env flag. Earlier versions gated introspection on `SETELL_MCP_INTROSPECTION`, but MCP catalog checkers (Glama) run the server with their own environment and a placeholder key — they don't set that flag — so the malformed-key check still exited the container before it could respond. A missing/invalid key now logs a warning and the surface is listed anyway; tool calls still fail closed at the backend (401). Removes the `SETELL_MCP_INTROSPECTION` env var and its Dockerfile `ENV`.
+
 ## 0.7.3 — 2026-07-07
 
 - **Introspection-mode fix**: `SETELL_MCP_INTROSPECTION=1` now short-circuits *all* key validation, not just a missing key. Catalog checkers (Glama) inject a placeholder `SETELL_EXTENSION_KEY` (non-empty but malformed) when they detect a server needs one — 0.7.2 rejected it in the `setell_ext_` format check *before* introspection mode applied, so the container exited with code 1 before responding. Now an empty **or** malformed key is tolerated under the introspection flag; real tool calls still fail closed.

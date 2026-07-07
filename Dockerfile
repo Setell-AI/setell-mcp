@@ -2,12 +2,9 @@
 #
 # Glama (and any MCP catalog checker) builds this image, starts the server, and
 # issues introspection requests (initialize, tools/list, resources/list,
-# prompts/list). SETELL_MCP_INTROSPECTION=1 lets the server enumerate its
-# surface WITHOUT a key or a backend round-trip.
-#
-# To actually USE the tools, run with a real key:
-#   docker run -e SETELL_EXTENSION_KEY=setell_ext_... setell-mcp
-# (introspection mode is overridden the moment a key is present.)
+# prompts/list). The server always registers its surface and connects — with or
+# without credentials — so introspection works out of the box. Tool CALLS need a
+# real key: run with `docker run -e SETELL_EXTENSION_KEY=setell_ext_... <image>`.
 
 # ---- build stage ----------------------------------------------------------
 FROM node:20-alpine AS build
@@ -25,9 +22,5 @@ ENV NODE_ENV=production
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
-
-# Enumerate the tool/resource/prompt surface without credentials. A real tool
-# CALL still requires SETELL_EXTENSION_KEY (empty bearer → per-request 401).
-ENV SETELL_MCP_INTROSPECTION=1
 
 ENTRYPOINT ["node", "dist/index.js"]

@@ -1,46 +1,43 @@
 /**
  * Environment configuration for @setell/mcp.
  *
- * Loaded once at process start. Fatal errors here exit the process before any
- * MCP wiring runs — the MCP client sees the error in its server-status panel
- * rather than a hung connection.
+ * `loadConfig` NEVER throws. The server always registers its tool/resource/
+ * prompt surface and connects (see index.ts), so MCP introspection
+ * (initialize, tools/list, resources/list, prompts/list) works regardless of
+ * whether a valid key is present. That robustness is deliberate: MCP catalog
+ * checks (e.g. Glama) run the server with a PLACEHOLDER or absent key and their
+ * own environment, and ANY boot-time exit fails their check. Tool CALLS still
+ * fail closed — without a valid key the backend returns 401 and the tool
+ * surfaces the error.
  *
  * Env vars:
- *   - SETELL_EXTENSION_KEY  (required) — per-user bearer key minted in Setell
- *                                        Settings → Connected Apps → Setell-MCP.
- *                                        Same key powers the Chrome extension.
+ *   - SETELL_EXTENSION_KEY  (needed for real use) — per-user bearer key minted
+ *                            in Settings → Connected Apps → Setell-MCP. Same key
+ *                            powers the Chrome extension.
  *   - SETELL_API_URL        (optional) — defaults to https://go.setell.ai.
- *                                        Override for staging or local dev.
- *
- * Per BET-3-SETELL-MCP-V0.md §4.3, the env-var channel is the recommended
- * delivery path (vs. a CLI --key flag which leaks via `ps aux`).
+ *                            Override for staging or local dev.
  */
 
 // go.setell.ai is the live V2 product; app.setell.ai is the FROZEN V1
 // CASA-audit deployment and does not serve the MCP API (V1/V2 topology).
 const DEFAULT_API_URL = 'https://go.setell.ai';
-const KEY_ENV_VAR = 'SETELL_EXTENSION_KEY';
+export const KEY_ENV_VAR = 'SETELL_EXTENSION_KEY';
 const API_URL_ENV_VAR = 'SETELL_API_URL';
-const INTROSPECTION_ENV_VAR = 'SETELL_MCP_INTROSPECTION';
 
 export interface McpConfig {
-  /** Raw extension key. Never log this string — fingerprint it if needed. */
+  /** Raw extension key (`''` if unset). Never log this string. */
   readonly extensionKey: string;
   /** Base URL of the Setell backend, no trailing slash. */
   readonly apiUrl: string;
   /** Client identifier surfaced in telemetry / User-Agent. */
   readonly userAgent: string;
   /**
-   * Introspection-only mode (`SETELL_MCP_INTROSPECTION` set). Enumerate the
-   * tool/resource/prompt surface WITHOUT a key or a backend probe — for MCP
-   * catalog checks (e.g. Glama) that must start the server and list its
-   * capabilities but hold no credentials. Real tool CALLS still fail closed.
+   * True when the key is present and well-formed (starts with `setell_ext_`).
+   * A cheap pre-flight — the real validation happens server-side on every
+   * request via resolveExtensionKeyOwner. When false, the server still starts
+   * and lists its surface; tool calls fail closed at the backend (401).
    */
-  readonly introspection: boolean;
-}
-
-export class ConfigError extends Error {
-  override readonly name = 'ConfigError';
+  readonly keyLooksValid: boolean;
 }
 
 function trimTrailingSlash(url: string): string {
@@ -48,48 +45,19 @@ function trimTrailingSlash(url: string): string {
 }
 
 /**
- * Read + validate env. Throws ConfigError with an actionable message if the
- * extension key is missing or obviously malformed.
- *
- * Looking like an extension key is a cheap pre-flight check — the real
- * validation happens server-side via resolveExtensionKeyOwner during the
- * boot health probe.
+ * Read env into an McpConfig. NEVER throws — a missing or malformed key simply
+ * yields `keyLooksValid: false`, and the caller lists the surface anyway. See
+ * the module doc for why boot-time exits are avoided.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
   const apiUrl = trimTrailingSlash(env[API_URL_ENV_VAR]?.trim() || DEFAULT_API_URL);
 
   // Hard-coded UA; keep in sync with package.json "version" and SERVER_INFO
   // (index.ts) — bump all three together on release.
-  const userAgent = 'setell-mcp/0.7.3';
+  const userAgent = 'setell-mcp/0.7.4';
 
   const rawKey = env[KEY_ENV_VAR]?.trim() ?? '';
+  const keyLooksValid = rawKey.startsWith('setell_ext_');
 
-  // Introspection-only mode: enumerate the surface without validating the key or
-  // hitting the backend, so MCP catalog checks (e.g. Glama) can list the
-  // tools/resources/prompts. Catalog checkers commonly inject a PLACEHOLDER key
-  // (non-empty but malformed), so this MUST short-circuit BEFORE any key
-  // validation — an empty OR malformed key is tolerated here. A real tool CALL
-  // still fails closed (the invalid bearer yields a per-request 401), so nothing
-  // leaks.
-  const introspection = /^(1|true|yes|on)$/i.test(env[INTROSPECTION_ENV_VAR]?.trim() ?? '');
-  if (introspection) {
-    return { extensionKey: rawKey, apiUrl, userAgent, introspection: true };
-  }
-
-  if (!rawKey) {
-    throw new ConfigError(
-      `Setell-MCP requires the ${KEY_ENV_VAR} environment variable. ` +
-        'Mint a key at https://go.setell.ai/settings (Connected Apps → Setell-MCP) ' +
-        'and add it to your MCP client config.',
-    );
-  }
-
-  if (!rawKey.startsWith('setell_ext_')) {
-    throw new ConfigError(
-      `${KEY_ENV_VAR} does not look like a Setell extension key ` +
-        '(must start with "setell_ext_"). Did you paste the wrong value?',
-    );
-  }
-
-  return { extensionKey: rawKey, apiUrl, userAgent, introspection: false };
+  return { extensionKey: rawKey, apiUrl, userAgent, keyLooksValid };
 }

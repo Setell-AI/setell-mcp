@@ -24,7 +24,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { ConfigError, loadConfig } from './config.js';
+import { KEY_ENV_VAR, loadConfig } from './config.js';
 import { ApiError, SetellApiClient } from './api-client.js';
 import { registerAllTools } from './tools/index.js';
 import { registerAllResources } from './resources/index.js';
@@ -37,7 +37,7 @@ import { HealthResponseSchema } from './tools/_shared.js';
 // (Cross-boundary-value discipline per CLAUDE.md.) Bump both together on release.
 const SERVER_INFO = {
   name: 'setell',
-  version: '0.7.3',
+  version: '0.7.4',
   title: 'Setell',
 } as const;
 
@@ -51,32 +51,30 @@ function logToStderr(msg: string): void {
 }
 
 async function main(): Promise<void> {
-  // ---- 1. Config ---------------------------------------------------------
-  let config: ReturnType<typeof loadConfig>;
-  try {
-    config = loadConfig();
-  } catch (err) {
-    if (err instanceof ConfigError) {
-      logToStderr(err.message);
-      process.exit(2);
-    }
-    throw err;
-  }
+  // ---- 1. Config (never throws) -----------------------------------------
+  const config = loadConfig();
 
-  // ---- 2. API client + boot probe ---------------------------------------
+  // ---- 2. API client ----------------------------------------------------
   const api = new SetellApiClient({
     apiUrl: config.apiUrl,
     extensionKey: config.extensionKey,
     userAgent: config.userAgent,
   });
 
-  if (config.introspection) {
-    // Introspection-only boot: skip the auth probe and register the surface so
-    // MCP catalog checks (e.g. Glama) can enumerate tools/resources/prompts. A
-    // real tool CALL still fails closed — the empty key yields a per-request 401.
+  // ---- 2b. Advisory boot check — NEVER exits ----------------------------
+  // The server ALWAYS registers its surface and connects (below), so MCP
+  // introspection works even with a placeholder/absent key. This is what lets
+  // catalog checks (e.g. Glama) — which run the server with their own env and
+  // no real credentials — enumerate tools/resources/prompts. Tool CALLS still
+  // fail closed: without a valid key the backend returns 401 and the tool
+  // surfaces it. Any boot-time exit here would fail those checks, so we never do.
+  if (!config.keyLooksValid) {
     logToStderr(
-      'introspection mode — listing surface without auth; ' +
-        'tool calls require SETELL_EXTENSION_KEY',
+      config.extensionKey
+        ? `${KEY_ENV_VAR} is set but malformed (must start with "setell_ext_") — ` +
+            'listing tools anyway; calls fail until a valid key is set.'
+        : `${KEY_ENV_VAR} not set — listing tools anyway; calls fail until a key is set. ` +
+            'Mint one at https://go.setell.ai/settings (Connected Apps → Setell-MCP).',
     );
   } else {
     try {
@@ -86,27 +84,10 @@ async function main(): Promise<void> {
           `gmail=${health.integrations.gmail} qb=${health.integrations.quickbooks}`,
       );
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.code === 'unauthorized') {
-          logToStderr(
-            'Setell rejected the extension key. ' +
-              'Mint a fresh key in Settings → Connected Apps → Setell-MCP.',
-          );
-          process.exit(2);
-        }
-        if (err.code === 'plan_required') {
-          logToStderr(
-            'Setell-MCP requires the Pro plan. ' +
-              'Upgrade at https://go.setell.ai/settings/billing.',
-          );
-          process.exit(2);
-        }
-        logToStderr(`boot health probe failed (${err.code}): ${err.message}`);
-        // Network / 5xx — exit non-zero so the MCP client surfaces the error.
-        // Restart-on-failure is the client's job.
-        process.exit(1);
-      }
-      throw err;
+      const detail = err instanceof ApiError ? `${err.code}: ${err.message}` : String(err);
+      logToStderr(
+        `health probe failed (${detail}) — listing tools anyway; calls will surface the error.`,
+      );
     }
   }
 
