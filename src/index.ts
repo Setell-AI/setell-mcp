@@ -37,7 +37,7 @@ import { HealthResponseSchema } from './tools/_shared.js';
 // (Cross-boundary-value discipline per CLAUDE.md.) Bump both together on release.
 const SERVER_INFO = {
   name: 'setell',
-  version: '0.7.0',
+  version: '0.7.2',
   title: 'Setell',
 } as const;
 
@@ -70,34 +70,44 @@ async function main(): Promise<void> {
     userAgent: config.userAgent,
   });
 
-  try {
-    const health = await api.get('/api/mcp/v1/health', HealthResponseSchema);
+  if (config.introspection) {
+    // Introspection-only boot: skip the auth probe and register the surface so
+    // MCP catalog checks (e.g. Glama) can enumerate tools/resources/prompts. A
+    // real tool CALL still fails closed — the empty key yields a per-request 401.
     logToStderr(
-      `connected — plan=${health.plan} ` +
-        `gmail=${health.integrations.gmail} qb=${health.integrations.quickbooks}`,
+      'introspection mode — listing surface without auth; ' +
+        'tool calls require SETELL_EXTENSION_KEY',
     );
-  } catch (err) {
-    if (err instanceof ApiError) {
-      if (err.code === 'unauthorized') {
-        logToStderr(
-          'Setell rejected the extension key. ' +
-            'Mint a fresh key in Settings → Connected Apps → Setell-MCP.',
-        );
-        process.exit(2);
+  } else {
+    try {
+      const health = await api.get('/api/mcp/v1/health', HealthResponseSchema);
+      logToStderr(
+        `connected — plan=${health.plan} ` +
+          `gmail=${health.integrations.gmail} qb=${health.integrations.quickbooks}`,
+      );
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.code === 'unauthorized') {
+          logToStderr(
+            'Setell rejected the extension key. ' +
+              'Mint a fresh key in Settings → Connected Apps → Setell-MCP.',
+          );
+          process.exit(2);
+        }
+        if (err.code === 'plan_required') {
+          logToStderr(
+            'Setell-MCP requires the Pro plan. ' +
+              'Upgrade at https://go.setell.ai/settings/billing.',
+          );
+          process.exit(2);
+        }
+        logToStderr(`boot health probe failed (${err.code}): ${err.message}`);
+        // Network / 5xx — exit non-zero so the MCP client surfaces the error.
+        // Restart-on-failure is the client's job.
+        process.exit(1);
       }
-      if (err.code === 'plan_required') {
-        logToStderr(
-          'Setell-MCP requires the Pro plan. ' +
-            'Upgrade at https://go.setell.ai/settings/billing.',
-        );
-        process.exit(2);
-      }
-      logToStderr(`boot health probe failed (${err.code}): ${err.message}`);
-      // Network / 5xx — exit non-zero so the MCP client surfaces the error.
-      // Restart-on-failure is the client's job.
-      process.exit(1);
+      throw err;
     }
-    throw err;
   }
 
   // ---- 3. Build the MCP server ------------------------------------------

@@ -21,6 +21,7 @@
 const DEFAULT_API_URL = 'https://go.setell.ai';
 const KEY_ENV_VAR = 'SETELL_EXTENSION_KEY';
 const API_URL_ENV_VAR = 'SETELL_API_URL';
+const INTROSPECTION_ENV_VAR = 'SETELL_MCP_INTROSPECTION';
 
 export interface McpConfig {
   /** Raw extension key. Never log this string — fingerprint it if needed. */
@@ -29,6 +30,13 @@ export interface McpConfig {
   readonly apiUrl: string;
   /** Client identifier surfaced in telemetry / User-Agent. */
   readonly userAgent: string;
+  /**
+   * Introspection-only mode (`SETELL_MCP_INTROSPECTION` set). Enumerate the
+   * tool/resource/prompt surface WITHOUT a key or a backend probe — for MCP
+   * catalog checks (e.g. Glama) that must start the server and list its
+   * capabilities but hold no credentials. Real tool CALLS still fail closed.
+   */
+  readonly introspection: boolean;
 }
 
 export class ConfigError extends Error {
@@ -48,8 +56,23 @@ function trimTrailingSlash(url: string): string {
  * boot health probe.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
+  const apiUrl = trimTrailingSlash(env[API_URL_ENV_VAR]?.trim() || DEFAULT_API_URL);
+
+  // Hard-coded UA; keep in sync with package.json "version" and SERVER_INFO
+  // (index.ts) — bump all three together on release.
+  const userAgent = 'setell-mcp/0.7.2';
+
+  // Introspection-only mode: enumerate the surface without a key or a backend
+  // round-trip so MCP catalog checks (e.g. Glama) can start the server and list
+  // its tools/resources/prompts. A real tool CALL still needs a valid key (the
+  // empty bearer yields a per-request 401), so this leaks nothing.
+  const introspection = /^(1|true|yes|on)$/i.test(env[INTROSPECTION_ENV_VAR]?.trim() ?? '');
+
   const rawKey = env[KEY_ENV_VAR]?.trim() ?? '';
   if (!rawKey) {
+    if (introspection) {
+      return { extensionKey: '', apiUrl, userAgent, introspection: true };
+    }
     throw new ConfigError(
       `Setell-MCP requires the ${KEY_ENV_VAR} environment variable. ` +
         'Mint a key at https://go.setell.ai/settings (Connected Apps → Setell-MCP) ' +
@@ -64,11 +87,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
     );
   }
 
-  const apiUrl = trimTrailingSlash(env[API_URL_ENV_VAR]?.trim() || DEFAULT_API_URL);
-
-  // Match a `package.json` version dynamically would require JSON import; for
-  // v0 a hard-coded UA is sufficient. Bump when the package version moves.
-  const userAgent = 'setell-mcp/0.7.0';
-
-  return { extensionKey: rawKey, apiUrl, userAgent };
+  return { extensionKey: rawKey, apiUrl, userAgent, introspection };
 }

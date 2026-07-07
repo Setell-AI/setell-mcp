@@ -1,6 +1,6 @@
 {
   "name": "@setell/mcp",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Setell-MCP server — drive quote-to-cash from Claude Code, Claude.ai, or any MCP-aware agent. Stdio v0.",
   "type": "module",
   "license": "MIT",
