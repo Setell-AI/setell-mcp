@@ -37,7 +37,7 @@ import { HealthResponseSchema } from './tools/_shared.js';
 // (Cross-boundary-value discipline per CLAUDE.md.) Bump both together on release.
 const SERVER_INFO = {
   name: 'setell',
-  version: '0.7.2',
+  version: '0.7.3',
   title: 'Setell',
 } as const;
 

@@ -60,19 +60,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
 
   // Hard-coded UA; keep in sync with package.json "version" and SERVER_INFO
   // (index.ts) — bump all three together on release.
-  const userAgent = 'setell-mcp/0.7.2';
-
-  // Introspection-only mode: enumerate the surface without a key or a backend
-  // round-trip so MCP catalog checks (e.g. Glama) can start the server and list
-  // its tools/resources/prompts. A real tool CALL still needs a valid key (the
-  // empty bearer yields a per-request 401), so this leaks nothing.
-  const introspection = /^(1|true|yes|on)$/i.test(env[INTROSPECTION_ENV_VAR]?.trim() ?? '');
+  const userAgent = 'setell-mcp/0.7.3';
 
   const rawKey = env[KEY_ENV_VAR]?.trim() ?? '';
+
+  // Introspection-only mode: enumerate the surface without validating the key or
+  // hitting the backend, so MCP catalog checks (e.g. Glama) can list the
+  // tools/resources/prompts. Catalog checkers commonly inject a PLACEHOLDER key
+  // (non-empty but malformed), so this MUST short-circuit BEFORE any key
+  // validation — an empty OR malformed key is tolerated here. A real tool CALL
+  // still fails closed (the invalid bearer yields a per-request 401), so nothing
+  // leaks.
+  const introspection = /^(1|true|yes|on)$/i.test(env[INTROSPECTION_ENV_VAR]?.trim() ?? '');
+  if (introspection) {
+    return { extensionKey: rawKey, apiUrl, userAgent, introspection: true };
+  }
+
   if (!rawKey) {
-    if (introspection) {
-      return { extensionKey: '', apiUrl, userAgent, introspection: true };
-    }
     throw new ConfigError(
       `Setell-MCP requires the ${KEY_ENV_VAR} environment variable. ` +
         'Mint a key at https://go.setell.ai/settings (Connected Apps → Setell-MCP) ' +
@@ -87,5 +91,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
     );
   }
 
-  return { extensionKey: rawKey, apiUrl, userAgent, introspection };
+  return { extensionKey: rawKey, apiUrl, userAgent, introspection: false };
 }

@@ -2,6 +2,10 @@
 
 All notable changes to `@setell/mcp`. Versions before 0.7.0 were internal milestones in the Setell monorepo — **0.7.0 is the first version published to npm.** PR numbers reference the (private) monorepo.
 
+## 0.7.3 — 2026-07-07
+
+- **Introspection-mode fix**: `SETELL_MCP_INTROSPECTION=1` now short-circuits *all* key validation, not just a missing key. Catalog checkers (Glama) inject a placeholder `SETELL_EXTENSION_KEY` (non-empty but malformed) when they detect a server needs one — 0.7.2 rejected it in the `setell_ext_` format check *before* introspection mode applied, so the container exited with code 1 before responding. Now an empty **or** malformed key is tolerated under the introspection flag; real tool calls still fail closed.
+
 ## 0.7.2 — 2026-07-06
 
 - **Introspection mode** (`SETELL_MCP_INTROSPECTION=1`): the server now boots and enumerates its tools/resources/prompts without a key or a backend health probe — so MCP catalog checks (e.g. Glama) can validate the surface. Real tool calls still require a valid `SETELL_EXTENSION_KEY` (an empty bearer yields a per-request 401); no credential is shared. Default behaviour (no flag) is unchanged — a missing/invalid key still fails fast at boot.
