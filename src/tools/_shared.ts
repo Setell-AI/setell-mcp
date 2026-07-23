@@ -670,6 +670,25 @@ export const SaveCustomerMemoryResponseSchema = z.object({
 export type SaveCustomerMemoryResponse = z.infer<typeof SaveCustomerMemoryResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Add-job-context schema — setell_add_job_context mutator.
+//
+// Mirrors the in-app add_job_context Boxx tool. Backed by
+// POST /api/mcp/v1/jobs/{id}/context. Attaches freeform scoping notes
+// (site-visit / walkthrough / call notes) to a job as a text artifact whose
+// content feeds the next quote draft.
+// ---------------------------------------------------------------------------
+
+export const AddJobContextResponseSchema = z.object({
+  ok: z.literal(true),
+  artifact: z.object({
+    id: z.string(),
+    fileName: z.string(),
+    deduped: z.boolean(),
+  }),
+});
+export type AddJobContextResponse = z.infer<typeof AddJobContextResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // GET /api/mcp/v1/customers/{id}/memory — the read side of the memory write
 // path. Lists every CustomerMemory row for the (operator, customer) pair so
 // the external agent can audit / reason about / decide-to-overwrite a
@@ -915,3 +934,40 @@ export function successResultFromJson(payload: unknown): CallToolResult {
     structuredContent: payload as { [key: string]: unknown },
   };
 }
+
+// ─── Playbooks (trade starter-configs — behavior only, never prices) ────────
+
+export const PlaybooksListResponseSchema = z.object({
+  ok: z.literal(true),
+  applied: z
+    .object({
+      slug: z.string(),
+      appliedAt: z.string().nullable(),
+    })
+    .nullable(),
+  playbooks: z.array(
+    z.object({
+      slug: z.string(),
+      tradeLabel: z.string(),
+      covers: z.string(),
+      promise: z.string(),
+      starterTemplates: z.array(z.string()),
+      paymentTermsSuggestion: z.string().nullable(),
+      integrationNudges: z.array(z.string()),
+      applied: z.boolean(),
+    }),
+  ),
+});
+export type PlaybooksListResponse = z.infer<typeof PlaybooksListResponseSchema>;
+
+export const ApplyPlaybookResponseSchema = z.object({
+  ok: z.literal(true),
+  report: z.object({
+    slug: z.string(),
+    tradeLabel: z.string(),
+    applied: z.array(z.object({ surface: z.string(), detail: z.string() })),
+    skipped: z.array(z.object({ surface: z.string(), reason: z.string() })),
+    nextSteps: z.array(z.string()),
+  }),
+});
+export type ApplyPlaybookResponse = z.infer<typeof ApplyPlaybookResponseSchema>;

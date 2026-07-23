@@ -4,7 +4,7 @@ Drive your Setell quote-to-cash workflow from any MCP-aware agent — Claude Cod
 
 [Setell](https://go.setell.ai) is a vertical agent for small-business quote-to-cash (machine shops, contractors, HVAC, service businesses). It ingests inbound email, drafts AI quotes, applies structured revisions, sends invoices, and syncs to QuickBooks. Setell exposes the same agent across three peer surfaces: a web app, the Gmail inbox, and any MCP-aware agent. `@setell/mcp` is the third surface — it lets you ask "what's stale?", "show me the Cooper job", or "draft a follow-up" from whatever agent you live in, without leaving it. Built for operators who run their business from Claude Code, and for bookkeepers and fractional CFOs who drive Setell on behalf of an operator.
 
-> **Status:** v0 — stdio transport, read-mostly surface. Pro-tier feature. See [`docs/BET-3-SETELL-MCP-V0.md`](https://github.com/andrewmjacob/snowboxx/blob/main/docs/BET-3-SETELL-MCP-V0.md) in the main repo for the full design.
+> **Status:** Published on npm as `@setell/mcp` (0.7.x) — Pro-tier feature. A 25-tool surface: 16 read-only + 9 mutating (compose, send, schedule, select-tier, save-customer-memory, set-autonomy, update-shop-profile). Two transports: local stdio (`npx -y @setell/mcp`) and the hosted remote connector (`https://go.setell.ai/api/mcp`). See [`docs/BET-3-SETELL-MCP-V0.md`](https://github.com/andrewmjacob/snowboxx/blob/main/docs/BET-3-SETELL-MCP-V0.md) in the main repo for the full design.
 
 ## Requires
 
@@ -71,7 +71,7 @@ Any client that supports remote MCP servers with custom headers (Claude Code, Cl
 
 ### Claude.ai (Custom Connector)
 
-Claude.ai's web Custom Connector flow requires OAuth on the remote server — that's the next phase for the hosted endpoint above. Until then, claude.ai users can run the stdio server via the desktop app config.
+Claude.ai's web Custom Connector connects to the hosted endpoint above (`https://go.setell.ai/api/mcp`) with a browser sign-in — no local install and no manual key. Prefer a local server? Claude.ai Desktop can also run the stdio `npx -y @setell/mcp` invocation via the config above.
 
 ### ChatGPT desktop and other MCP clients
 
@@ -94,7 +94,7 @@ See `docs/BET-3-SETELL-MCP-V0.md` §4 for the full auth model.
 
 ## What's in it
 
-The v0 surface is intentionally tight — a small, discoverable set that we expand as we watch how external agents actually use it.
+The surface is intentionally tight — a small, discoverable set that we expand as we watch how external agents actually use it.
 
 ### Tools (model-invoked)
 
@@ -125,13 +125,13 @@ Annotated with `readOnlyHint` and `destructiveHint` per the MCP spec. 25 tools: 
 
 | Tool                            | Title                              | What it does                                                                                                                                                                                                              |
 | ------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `setell_set_autonomy`           | Set Setell autonomy mode           | **Mutator (idempotent).** Change the operator's mode for one action class. WATCH allowed for all plans; TRUST and AUTO require Business or Pro. Confirm with the operator before flipping a mode on their behalf — this changes how Boxx behaves on future sends. |
+| `setell_set_autonomy`           | Set Setell autonomy mode           | **Mutator (idempotent).** Change the operator's mode for one action class. WATCH allowed for all plans; TRUST and AUTO require Business or Pro. Confirm with the operator before flipping a mode on their behalf — this changes how Setell behaves on future sends. |
 | `setell_update_shop_profile`    | Update Setell shop profile         | **Mutator (idempotent).** PARTIAL patch of the shop profile — only the fields you pass change, but each provided list REPLACES that whole field, so read `setell_get_shop_profile` first and send the complete updated list. Steers how Setell judges complexity / cycle-time / finish fit on every future draft — confirm with the operator before writing. |
 | `setell_compose_quote`          | Compose a Setell quote email       | **Mutator (idempotent-ish).** Drafts the quote email body (AI-generated in the operator's brand voice) AND mints a single-use confirmation token bound to this quote version + recipient. Returns the preview shape (quote, email, portalUrl, customer, confirmationToken, confirmationExpiresAt). Token TTL: 15 minutes. Plan-gated. |
 | `setell_send_quote`             | Send a Setell quote                | **Mutator (destructive — IRREVERSIBLE).** Sends the doorbell email via DKIM-delegated Resend (or SETELL_DEFAULT fallback). Requires a valid `confirmationToken` from `setell_compose_quote`. Runs the pricing-analyst pre-check first: on WARN/FLAG with WATCH mode, or any FLAG, returns 409 + `pricing_pushback` for the calling agent to surface; retry with `acknowledgePricingWarning: true` only after operator confirmation. Same atomic guard as the in-app `send_quote` — drift (revision, recipient change, expiry, replay) fails closed. |
 | `setell_schedule_send`          | Schedule a Setell quote send       | **Mutator (idempotent).** Stamps `scheduledSendAt` on the latest quote of a job; the 5-min cron picks it up and dispatches via the canonical pipeline. Bounds: 1 minute to 30 days in the future. Does NOT re-run pricing-analyst (operator already approved) — call `setell_get_pricing_signal` first if pricing certainty matters. |
 | `setell_cancel_scheduled_send`  | Cancel a scheduled Setell send     | **Mutator (idempotent).** Clears a pending scheduled send on the latest quote of a job. Returns the previous schedule time (or null if none was pending). |
-| `setell_save_customer_memory`   | Setell save customer memory        | **Mutator (destructive — persists a row).** Persist a single operator-confirmed pattern about a customer mid-conversation. Three types: PRICING (rates, discount patterns), PREFERENCE (quote structure / special requirements), COMMUNICATION (tone, timing, expected info). Read back into Boxx and the agent surface the next time this customer is in scope. |
+| `setell_save_customer_memory`   | Setell save customer memory        | **Mutator (destructive — persists a row).** Persist a single operator-confirmed pattern about a customer mid-conversation. Three types: PRICING (rates, discount patterns), PREFERENCE (quote structure / special requirements), COMMUNICATION (tone, timing, expected info). Read back into Studio and the agent surface the next time this customer is in scope. |
 | `setell_generate_quote_tiers`   | Generate Setell quote tiers        | **Mutator.** Generate good/better/best options around a job's current quote (proven close-rate lifter): GOOD is a leaner lower-priced option, BETTER mirrors the existing baseline verbatim (recommended), BEST is an expanded premium option. Stores the options as a group — does NOT change the active quote; call `setell_select_quote_tier` once the operator or customer picks one. Plan-gated. |
 | `setell_select_quote_tier`      | Select a Setell quote tier         | **Mutator.** Make a chosen tier the job's active quote. GOOD/BEST create a new quote version from that tier's line items via the deterministic revision engine; BETTER is a no-op (it already IS the baseline). A 409 with code `stale` means the quote changed since the options were generated — regenerate first. After selecting, compose/send operate on the chosen tier. |
 
@@ -141,7 +141,7 @@ Annotated with `readOnlyHint` and `destructiveHint` per the MCP spec. 25 tools: 
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
 | `setell://health`                    | Current connection + plan + integration snapshot. Read this first to verify the MCP server is healthy.                                                                                                                   | `application/json` |
 | `setell://jobs/{id}`                 | Full job state: customer, every quote version (summaries), recent emails, customer-memory snapshot. Pivot to `setell_get_quote` for line items on a specific version.                                                    | `application/json` |
-| `setell://autonomy`                  | Current per-action-class autonomy modes (WATCH / TRUST / AUTO). Read this when reasoning about how Boxx will behave on the next send.                                                                                    | `application/json` |
+| `setell://autonomy`                  | Current per-action-class autonomy modes (WATCH / TRUST / AUTO). Read this when reasoning about how Setell will behave on the next send.                                                                                    | `application/json` |
 | `setell://learning/coverage`         | Vertical-moat metrics + maturity tier (cold-start / warming / mature / deep). Use when sizing up how much weight to give pricing-analyst verdicts.                                                                       | `application/json` |
 | `setell://customers/{id}/baseline`   | Per-customer learned pricing baseline rows (one per jobType plus customer-wide). Sampled over SIGNED quotes — reflects the operator's actual pricing for this relationship.                                              | `application/json` |
 | `setell://customers/{id}/memory`     | Every CustomerMemory row stored for a specific customer — pricing patterns, preferences, communication style, each with source tag, confidence, and timestamps. Read before writing via `setell_save_customer_memory`.  | `application/json` |
@@ -157,7 +157,7 @@ Annotated with `readOnlyHint` and `destructiveHint` per the MCP spec. 25 tools: 
 | `/setell-draft-followup`   | `job_id: string`                | Drafts a follow-up email in your brand voice for the given job. Does **not** send — sending requires a separate, deliberate action.                                            |
 | `/setell-pricing-check`    | `job_id: string`                | Runs `setell_get_pricing_signal` and narrates the verdict in the operator's voice (PASS / WARN / FLAG + reasoning + recommended counter). Does **not** send — operator picks the next action. |
 | `/setell-moat-coverage`    | none                            | One-paragraph narrative of the operator's Setell vertical-moat depth (maturity tier, customer breadth, sample-size, next milestone). Pulls from `setell_get_learning_coverage`. |
-| `/setell-send-quote`       | `job_id: string`                | Orchestrates the full compose → pricing-check → confirm → send flow. Stops for operator confirmation before the irreversible send. Uses the same safety stack as the in-app `send_quote` Boxx tool. |
+| `/setell-send-quote`       | `job_id: string`                | Orchestrates the full compose → pricing-check → confirm → send flow. Stops for operator confirmation before the irreversible send. Uses the same safety stack as the in-app `send_quote` tool. |
 
 ## Example queries
 
@@ -170,16 +170,15 @@ Once installed and running, ask your agent any of:
 - *"What's my revenue this week vs. last week? Use `/setell-weekly-revenue`."*
 - *"Before I send this quote for $1,800 on job `clx8h3p9a000`, call `setell_get_pricing_signal` and tell me what my pricing-analyst says."*
 - *"What does Setell know about how I price kitchen jobs for Cooper? Use `setell_get_customer_baseline`."*
-- *"Flip my `send_quote` autonomy to Trust so Boxx auto-proceeds on routine WARN pushback. Use `setell_set_autonomy`."*
+- *"Flip my `send_quote` autonomy to Trust so Setell auto-proceeds on routine WARN pushback. Use `setell_set_autonomy`."*
 - *"Compose a quote for job `clx8h3p9a000` with `setell_compose_quote`, show me the preview, then send it with `setell_send_quote` after I confirm."*
 - *"Schedule the Cooper quote to go out tomorrow at 9am Pacific — use `setell_schedule_send`."*
 - *"Actually cancel the schedule on that one, let me look at it again — `setell_cancel_scheduled_send`."*
 - *"How much pricing brain does Setell have built up for me? Use `setell_get_learning_coverage` and summarize."*
 
-## What's NOT in v0
+## Current limitations
 
-- No OAuth on the remote endpoint yet (bearer keys only) — claude.ai/ChatGPT web connectors land with the OAuth phase.
-- The remote endpoint is tools-only; resources and prompts are stdio-only for now.
+- The hosted remote connector exposes the tool surface; resources and prompts are served over the local stdio server (`npx -y @setell/mcp`).
 
 ## Troubleshooting
 

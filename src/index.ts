@@ -37,7 +37,7 @@ import { HealthResponseSchema } from './tools/_shared.js';
 // (Cross-boundary-value discipline per CLAUDE.md.) Bump both together on release.
 const SERVER_INFO = {
   name: 'setell',
-  version: '0.7.4',
+  version: '0.8.0',
   title: 'Setell',
 } as const;
 
@@ -142,6 +142,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logToStderr(`fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+  logToStderr(`fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
   process.exit(1);
 });

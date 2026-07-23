@@ -45,6 +45,10 @@ import { registerSelectQuoteTierTool } from './select-quote-tier.js';
 import { registerGetQuoteTiersTool } from './get-quote-tiers.js';
 import { registerGetJobMarginTool } from './get-job-margin.js';
 import { registerGetMarginSummaryTool } from './get-margin-summary.js';
+import { registerListPlaybooksTool } from './list-playbooks.js';
+import { registerApplyPlaybookTool } from './apply-playbook.js';
+import { registerCoreLoopTools } from './core-loop.js';
+import { registerAddJobContextTool } from './add-job-context.js';
 
 export interface ToolRegistrationContext {
   /** HTTP client to the Setell backend. */
@@ -126,6 +130,20 @@ export interface ToolRegistrationContext {
  *                                   honesty floor. Operator-only data.
  *   - setell_get_margin_summary   — margin across recent WON jobs vs the
  *                                   operator's target; worst jobs/types.
+ *
+ * Sprint 11 — playbooks (trade starter-configs; Playbooks v1):
+ *   - setell_list_playbooks  — curated catalog + applied state. Behavior
+ *                              only — a playbook never carries a price.
+ *   - setell_apply_playbook  — apply/switch; non-destructive by
+ *                              construction (untouched-surfaces rule),
+ *                              returns the honest {applied, skipped,
+ *                              nextSteps} report.
+ *
+ * Sprint 12 — field capture (on-site estimator write path):
+ *   - setell_add_job_context — walkthrough / site-visit / call notes →
+ *                              SCOPING_INPUT text artifact that feeds the
+ *                              next quote draft. The agent-surface peer of
+ *                              the in-app add_job_context Boxx tool.
  */
 export function registerAllTools(server: McpServer, ctx: ToolRegistrationContext): void {
   registerGetHealthTool(server, ctx);
@@ -153,4 +171,8 @@ export function registerAllTools(server: McpServer, ctx: ToolRegistrationContext
   registerGetQuoteTiersTool(server, ctx);
   registerGetJobMarginTool(server, ctx);
   registerGetMarginSummaryTool(server, ctx);
+  registerListPlaybooksTool(server, ctx);
+  registerApplyPlaybookTool(server, ctx);
+  registerAddJobContextTool(server, ctx);
+  registerCoreLoopTools(server, ctx);
 }
